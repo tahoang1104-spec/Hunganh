@@ -1,69 +1,32 @@
-import av
-from ultralytics import YOLO
 import streamlit as st
-import cv2
 from PIL import Image
-import tempfile
-from streamlit_webrtc import VideoProcessorBase, WebRtcMode, webrtc_streamer
 import numpy as np
 import os
+import pandas as pd
 from class_names import class_names
 
-# --- CẤU HÌNH HỆ SỐ SIZE ---
-# Sửa tên class ở đây cho khớp với model size của bạn
-SIZE_MULTIPLIERS = {
-    "small": 0.7,
-    "nho": 0.7,
-    "medium": 1.0,
-    "vua": 1.0,
-    "large": 1.5,
-    "to": 1.5,
-    "big": 1.5
-}
+# Import module vệ tinh
+from food import predict_food
+from size import predict_size
 
-# --- 1. LOAD MODEL & CSS ---
-@st.cache_resource
-def load_models():
-    # Load model Food
-    model_food = YOLO("./model/yolov8n.pt")
-    
-    # Load model Size (có xử lý lỗi nếu file hỏng/thiếu)
-    model_size = None
-    if os.path.exists("./model/size.pt"):
-        try:
-            model_size = YOLO("./model/size.pt")
-        except Exception as e:
-            print(f"Lỗi load model size: {e}")
-    
-    return model_food, model_size
-
+# --- 1. HÀM CSS (ĐÃ SỬA LỖI CHARMAP) ---
 def styling_css():
-    if os.path.exists('./assets/css/general-style.css'):
-        with open('./assets/css/general-style.css') as f:
+    css_path = './assets/css/general-style.css'
+    if os.path.exists(css_path):
+        # --- SỬA Ở ĐÂY: Thêm encoding='utf-8' ---
+        with open(css_path, encoding='utf-8') as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
-# --- HÀM HỖ TRỢ TÍNH TOÁN ---
-def get_box_center(box):
-    x1, y1, x2, y2 = box.xyxy[0].tolist()
-    return (x1 + x2) / 2, (y1 + y2) / 2
-
-def is_center_inside(center, box_wrapper):
-    cx, cy = center
-    x1, y1, x2, y2 = box_wrapper.xyxy[0].tolist()
-    return x1 < cx < x2 and y1 < cy < y2
-
-# --- 2. HÀM HIỂN THỊ KẾT QUẢ (Đã sửa lỗi NoneType) ---
-def display_results(food_results, size_results, container_placeholder):
-    container = container_placeholder.container()
-    
+# --- 2. HÀM HIỂN THỊ KẾT QUẢ & BẢNG ---
+def display_analysis(food_results, size_model, original_image, container):
     with container:
         st.divider()
-        st.subheader("🥗 Kết quả phân tích chi tiết")
+        st.subheader("🥗 Kết quả chi tiết")
         
         total_calories = 0
         found_any = False
+        table_data = [] 
         
-        # Duyệt qua từng món ăn
         for r in food_results:
             for box in r.boxes:
                 class_id = int(box.cls[0].item())
@@ -73,85 +36,80 @@ def display_results(food_results, size_results, container_placeholder):
                 name = info["name"]
                 base_nutri = info["nutrition"]
                 
-                # --- LOGIC TÌM SIZE (ĐÃ VÁ LỖI) ---
-                multiplier = 1.0
-                size_label = "Vừa (Mặc định)"
-                
-                if size_results:
-                    food_center = get_box_center(box)
-                    for s_r in size_results:
-                        # >>> DÒNG SỬA LỖI QUAN TRỌNG <<<
-                        # Nếu model size không trả về boxes (None), thì bỏ qua
-                        if s_r.boxes is None: 
-                            continue 
-                            
-                        for s_box in s_r.boxes:
-                            if is_center_inside(food_center, s_box):
-                                s_name = size_results[0].names[int(s_box.cls[0].item())].lower()
-                                if s_name in SIZE_MULTIPLIERS:
-                                    multiplier = SIZE_MULTIPLIERS[s_name]
-                                    size_label = f"{s_name.upper()} (x{multiplier})"
-                                else:
-                                    size_label = f"{s_name}"
-                # -----------------------------------
+                # Cắt ảnh & Tính size
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                crop_img = original_image.crop((int(x1), int(y1), int(x2), int(y2)))
+                multiplier, size_label = predict_size(size_model, crop_img)
 
+                # Tính dinh dưỡng
                 cal = int(base_nutri.get('Calories', 0) * multiplier)
                 fat = round(base_nutri.get('Fat', 0) * multiplier, 1)
                 sugar = round(base_nutri.get('Sugar', 0) * multiplier, 1)
                 
-                found_any = True
                 total_calories += cal
+                found_any = True
                 
-                with st.expander(f"🔹 {name} - Size: {size_label}", expanded=True):
+                table_data.append({
+                    "Tên món": name,
+                    "Kích cỡ": size_label,
+                    "Calo (kcal)": cal,
+                    "Chất béo (g)": fat,
+                    "Đường (g)": sugar
+                })
+                
+                with st.expander(f"🔹 {name} - {size_label}", expanded=True):
                     c1, c2, c3 = st.columns(3)
                     c1.metric("🔥 Calo", f"{cal}")
-                    c2.metric("🥩 Chất béo", f"{fat}g")
+                    c2.metric("🥩 Béo", f"{fat}g")
                     c3.metric("🍬 Đường", f"{sugar}g")
 
         if found_any:
-            st.success(f"📊 **TỔNG KẾT:** Tổng cộng khoảng **{total_calories} kcal**.")
+            st.markdown("### 📋 Bảng Tổng Hợp Dinh Dưỡng")
+            df = pd.DataFrame(table_data)
+            st.dataframe(df, use_container_width=True)
+            st.success(f"📊 **TỔNG CỘNG BỮA ĂN:** ~ **{total_calories} kcal**")
         else:
-            st.warning("⚠️ Không tìm thấy món ăn.")
+            st.warning("⚠️ Không tìm thấy món ăn nào.")
 
-# --- 3. CHỨC NĂNG: ẢNH ---
-def detect_image(conf, uploaded_file, models):
-    model_food, model_size = models
-    
+# --- 3. HÀM XỬ LÝ CHÍNH (CÓ SESSION STATE) ---
+def process_image(conf, uploaded_file, model_food, model_size):
     image = Image.open(uploaded_file)
+    
+    # Reset nếu upload ảnh mới
+    if 'last_uploaded' not in st.session_state or st.session_state.last_uploaded != uploaded_file.name:
+        st.session_state.has_processed = False
+        st.session_state.last_uploaded = uploaded_file.name
+        st.session_state.food_results = None
+        st.session_state.current_image = None
+
     col1, col2 = st.columns(2)
     with col1:
         st.image(image, caption="Ảnh gốc", use_container_width=True)
-    
+        
+    # Nút bấm chạy AI
     if st.button("🔍 Phân tích ngay"):
-        with st.spinner("Đang chạy 2 Model AI..."):
-            # 1. Chạy Model Food
-            res_food = model_food.predict(image, conf=conf)
+        with st.spinner("Đang chạy AI (Detect + Classify)..."):
+            res_food = predict_food(model_food, image, conf)
             
-            # 2. Chạy Model Size (Nếu có)
-            res_size = None
-            plot_img = res_food[0].plot()
+            # Lưu kết quả vào bộ nhớ
+            st.session_state.food_results = res_food
+            st.session_state.current_image = image
+            st.session_state.has_processed = True
             
-            if model_size:
-                # Giảm độ tin cậy size xuống thấp chút để dễ bắt
-                res_size = model_size.predict(image, conf=0.15) 
-                
-                # Vẽ khung size (nếu có) đè lên ảnh để debug
-                if res_size and res_size[0].boxes is not None:
-                     plot_img = res_size[0].plot(img=plot_img)
+    # Hiển thị (Luôn chạy nếu đã có kết quả trong bộ nhớ)
+    if st.session_state.get('has_processed'):
+        res_food = st.session_state.food_results
+        org_image = st.session_state.current_image
+        
+        plot_img = res_food[0].plot()
+        res_image = Image.fromarray(plot_img[..., ::-1])
+        
+        with col2:
+            st.image(res_image, caption="AI Nhận diện", use_container_width=True)
+        
+        display_analysis(res_food, model_size, org_image, st.container())
 
-            res_image = Image.fromarray(plot_img[..., ::-1])
-            
-            with col2:
-                st.image(res_image, caption="Kết quả nhận diện", use_container_width=True)
-            
-            # Gọi hàm hiển thị
-            display_results(res_food, res_size, st.empty())
-
-# --- CÁC HÀM KHÁC (VIDEO, WEBCAM) GIỮ NGUYÊN ---
-def detect_video(conf, uploaded_file, models):
-    st.warning("Chức năng Size chưa hỗ trợ Video.")
-
-def detect_webcam(conf, models):
-    st.warning("Chức năng Size chưa hỗ trợ Webcam.")
-
-def detect_camera(conf, models, url): pass
+# Placeholder
+def process_video(): st.info("🚧 Chức năng Video đang cập nhật...")
+def process_webcam(): st.info("🚧 Chức năng Webcam đang cập nhật...")
+def process_camera(): st.write("Đang kết nối camera...")

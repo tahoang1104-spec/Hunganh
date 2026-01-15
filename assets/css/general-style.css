@@ -1,22 +1,39 @@
-/* general-style.css */
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400;500;700&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'Roboto', sans-serif;
 }
 
-h1 {
-    color: #FEC51C; /* Màu vàng chủ đạo */
+/* Tiêu đề chính */
+h1, h2, h3 {
+    color: #333;
     font-weight: 700;
 }
 
+/* Sidebar đẹp hơn */
+[data-testid="stSidebar"] {
+    background-color: #f8f9fa;
+}
+
+/* Nút bấm màu vàng chuẩn FoodDetector */
 .stButton>button {
-    background-color: #FEC51C;
     color: black;
+    background-color: #FEC51C; /* Màu vàng thương hiệu */
     border: none;
     border-radius: 8px;
+    height: 3em;
+    width: 100%;
     font-weight: bold;
+    transition: all 0.3s ease;
 }
+
 .stButton>button:hover {
     background-color: #e6b219;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Chỉnh lại bảng cho đẹp */
+[data-testid="stDataFrame"] {
+    border: 1px solid #eee;
+    border-radius: 8px;
 }

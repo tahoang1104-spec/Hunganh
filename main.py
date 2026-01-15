@@ -1,92 +1,96 @@
 import streamlit as st
-# Lưu ý: Import hàm load_models (số nhiều) từ utils mới
-from utils import detect_image, detect_video, detect_webcam, detect_camera, load_models, styling_css
+from streamlit_option_menu import option_menu # <-- Thư viện menu đẹp
+from food import load_food_model
+from size import load_size_model
+from utils import styling_css, process_image, process_video, process_webcam, process_camera
 
 # 1. Cấu hình trang
 st.set_page_config(
-    page_title="FoodDetector Pro",
+    page_title="FoodDetector",
     page_icon="🍲",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# 2. Load CSS & Models (Food + Size)
+# 2. Load CSS và Model
 try:
     styling_css()
-    # Hàm này bây giờ trả về 2 model (model_food, model_size)
-    models = load_models()
+    model_food = load_food_model()
+    model_size = load_size_model()
 except Exception as e:
-    st.error(f"⚠️ Lỗi khởi động hệ thống: {e}")
+    st.error(f"Lỗi khởi động: {e}")
     st.stop()
 
-# 3. Tạo Menu điều hướng bên trái
+# 3. Giao diện Sidebar (GIỐNG HỆT BẢN GỐC)
 with st.sidebar:
-    st.title("🍲 FoodDetector")
-    selected_page = st.radio("Đi tới:", ["Trang chủ", "Giới thiệu", "Mã nguồn"])
+    # Logo hoặc Tiêu đề to
+    st.markdown("<h1 style='text-align: center; color: #FEC51C;'>🍲 FoodDetector</h1>", unsafe_allow_html=True)
+    
+    # Menu chọn trang với Icon đẹp
+    selected = option_menu(
+        menu_title=None,  # Không cần tiêu đề phụ
+        options=["Home", "About", "Github"], 
+        icons=["house", "info-circle", "github"], 
+        menu_icon="cast", 
+        default_index=0,
+        styles={
+            "container": {"padding": "0!important", "background-color": "#fafafa"},
+            "icon": {"color": "orange", "font-size": "20px"}, 
+            "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#eee"},
+            "nav-link-selected": {"background-color": "#FEC51C", "color": "black"}, # Màu vàng khi chọn
+        }
+    )
+    
     st.markdown("---")
-    
-    st.header("⚙️ Cài đặt")
+    st.subheader("⚙️ Settings")
     confidence = st.slider("Độ tin cậy (Confidence)", 10, 100, 40) / 100
-    
-    st.info("💡 Mẹo: Model Size hoạt động tốt nhất với ảnh chụp rõ nét.")
 
-# 4. Giao diện trang TRANG CHỦ
-if selected_page == "Trang chủ":
-    # --- HIỂN THỊ BANNER (Đã sửa lỗi deprecated) ---
+# 4. Điều hướng các trang
+if selected == "Home":
+    # Phần Banner hoặc Tiêu đề trang chủ
     try:
-        st.image("welcome.png", use_container_width=True) 
+        st.image("welcome.png", use_container_width=True)
     except:
-        # Nếu không tìm thấy ảnh thì hiện chữ
-        st.warning("⚠️ Chưa có file welcome.png trong thư mục.")
-        st.title("🕵️ Nhận diện & Tính Calo Món Ăn")
-    # -----------------------------------------------
-
-    st.markdown("### Chọn phương thức đầu vào:")
+        st.title("Phân tích Dinh Dưỡng & Size 📏")
 
     # 4 Tab chức năng
-    tab1, tab2, tab3, tab4 = st.tabs(["🖼️ Ảnh (Food + Size)", "🎥 Video", "📷 Webcam", "📹 IP Camera"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🖼️ Image", "🎥 Video", "📷 Webcam", "📹 IP Camera"])
 
-    with tab1: # Tab Ảnh - Hỗ trợ tính Size
-        st.subheader("📸 Tải ảnh món ăn")
-        uploaded_file = st.file_uploader("Chọn ảnh (jpg, png)...", type=['png', 'jpg', 'jpeg'])
-        
+    with tab1:
+        st.subheader("Upload Image")
+        uploaded_file = st.file_uploader("Choose an image...", type=['jpg', 'png', 'jpeg'])
         if uploaded_file:
-            # Truyền cả bộ 'models' vào hàm xử lý
-            detect_image(confidence, uploaded_file, models)
+            process_image(confidence, uploaded_file, model_food, model_size)
 
-    with tab2: # Tab Video
-        st.subheader("🎥 Tải video món ăn")
-        uploaded_video = st.file_uploader("Chọn video (mp4, avi)...", type=['mp4', 'avi'])
+    with tab2:
+        st.subheader("Upload Video")
+        uploaded_video = st.file_uploader("Choose a video...", type=['mp4', 'avi'])
         if uploaded_video:
-            detect_video(confidence, uploaded_video, models)
+            process_video()
 
-    with tab3: # Tab Webcam
-        st.subheader("📷 Camera trực tiếp")
-        st.info("Bấm START để bật camera")
-        detect_webcam(confidence, models)
+    with tab3:
+        st.subheader("Webcam Live")
+        process_webcam()
+        
+    with tab4:
+        st.subheader("RTSP Camera")
+        rtsp_url = st.text_input("RTSP URL:")
+        if st.button("Connect"):
+            process_camera()
 
-    with tab4: # Tab IP Camera
-        st.subheader("📹 Kết nối Camera IP")
-        rtsp_url = st.text_input("Nhập địa chỉ RTSP:", placeholder="rtsp://admin:pass@192.168.1.x:554/...")
-        if st.button("Kết nối Camera"):
-            if rtsp_url:
-                detect_camera(confidence, models, rtsp_url)
-            else:
-                st.warning("Vui lòng nhập địa chỉ RTSP")
-
-# 5. Giao diện trang GIỚI THIỆU
-elif selected_page == "Giới thiệu":
-    st.header("ℹ️ Về dự án")
-    st.markdown("""
-    **FoodDetector Pro** là phiên bản nâng cấp với khả năng nhận diện kép:
+elif selected == "About":
+    st.title("ℹ️ About FoodDetector")
+    st.info("""
+    **FoodDetector** là ứng dụng AI hỗ trợ nhận diện món ăn Việt Nam và tính toán lượng calo.
     
-    1.  **Nhận diện món ăn:** Sử dụng YOLOv8n (67 món Việt Nam).
-    2.  **Nhận diện kích cỡ:** Sử dụng Model phụ trợ để xác định (Nhỏ, Vừa, Lớn).
-    
-    **Cách hoạt động:**
-    - Nếu phát hiện size **Lớn** (Large), lượng Calo sẽ nhân hệ số **x1.5**.
-    - Nếu phát hiện size **Nhỏ** (Small), lượng Calo sẽ nhân hệ số **x0.7**.
+    - **Models:** YOLOv8 (Detection + Classification)
+    - **Data:** 67 Vietnamese Foods
+    - **Features:** Calorie estimation based on Food Type & Size.
     """)
 
-elif selected_page == "Mã nguồn":
-    st.header("📂 Mã nguồn")
-    st.write("Dự án được xây dựng trên nền tảng Streamlit và YOLOv8.")
+elif selected == "Github":
+    st.title("📂 Source Code")
+    st.markdown("""
+    ### 🔗 GitHub Repository
+    Truy cập mã nguồn gốc tại: [github.com/nvhnam/fooddetector](https://github.com/nvhnam/fooddetector)
+    """)
