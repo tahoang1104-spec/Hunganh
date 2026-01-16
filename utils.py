@@ -26,42 +26,60 @@ def display_analysis(food_results, size_model, original_image, container):
         total_calories = 0
         found_any = False
         table_data = [] 
+
+        # --- BƯỚC 1: KIỂM TRA SỰ TỒN TẠI CỦA BÚN CHẢ ---
+        all_detected_boxes = []
+        has_bun_cha = False
         
         for r in food_results:
             for box in r.boxes:
                 class_id = int(box.cls[0].item())
-                if class_id >= len(class_names): continue
-                
-                info = class_names[class_id]
-                name = info["name"]
-                base_nutri = info["nutrition"]
-                
-                # Cắt ảnh & Tính size
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                crop_img = original_image.crop((int(x1), int(y1), int(x2), int(y2)))
-                multiplier, size_label = predict_size(size_model, crop_img)
+                if class_id < len(class_names):
+                    name_en = class_names[class_id]["name"].lower()
+                    all_detected_boxes.append(box)
+                    # Kiểm tra nếu có bún chả (viết thường để so sánh)
+                    if "bún chả" in name_en or "bun cha" in name_en:
+                        has_bun_cha = True
 
-                # Tính dinh dưỡng
-                cal = int(base_nutri.get('Calories', 0) * multiplier)
-                fat = round(base_nutri.get('Fat', 0) * multiplier, 1)
-                sugar = round(base_nutri.get('Sugar', 0) * multiplier, 1)
-                
-                total_calories += cal
-                found_any = True
-                
-                table_data.append({
-                    "Tên món": name,
-                    "Kích cỡ": size_label,
-                    "Calo (kcal)": cal,
-                    "Chất béo (g)": fat,
-                    "Đường (g)": sugar
-                })
-                
-                with st.expander(f"🔹 {name} - {size_label}", expanded=True):
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("🔥 Calo", f"{cal}")
-                    c2.metric("🥩 Béo", f"{fat}g")
-                    c3.metric("🍬 Đường", f"{sugar}g")
+        # --- BƯỚC 2: LỌC VÀ HIỂN THỊ ---
+        for box in all_detected_boxes:
+            class_id = int(box.cls[0].item())
+            info = class_names[class_id]
+            name = info["name"]
+            name_lower = name.lower()
+
+            # NẾU CÓ BÚN CHẢ THÌ BỎ QUA CLASS BÚN
+            if has_bun_cha and (name_lower == "bún" or name_lower == "bun"):
+                continue 
+
+            base_nutri = info["nutrition"]
+            
+            # Cắt ảnh & Tính size
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            crop_img = original_image.crop((int(x1), int(y1), int(x2), int(y2)))
+            multiplier, size_label = predict_size(size_model, crop_img)
+
+            # Tính dinh dưỡng
+            cal = int(base_nutri.get('Calories', 0) * multiplier)
+            fat = round(base_nutri.get('Fat', 0) * multiplier, 1)
+            sugar = round(base_nutri.get('Sugar', 0) * multiplier, 1)
+            
+            total_calories += cal
+            found_any = True
+            
+            table_data.append({
+                "Tên món": name,
+                "Kích cỡ": size_label,
+                "Calo (kcal)": cal,
+                "Chất béo (g)": fat,
+                "Đường (g)": sugar
+            })
+            
+            with st.expander(f"🔹 {name} - {size_label}", expanded=True):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("🔥 Calo", f"{cal}")
+                c2.metric("🥩 Béo", f"{fat}g")
+                c3.metric("🍬 Đường", f"{sugar}g")
 
         if found_any:
             st.markdown("### 📋 Bảng Tổng Hợp Dinh Dưỡng")
@@ -70,6 +88,7 @@ def display_analysis(food_results, size_model, original_image, container):
             st.success(f"📊 **TỔNG CỘNG BỮA ĂN:** ~ **{total_calories} kcal**")
         else:
             st.warning("⚠️ Không tìm thấy món ăn nào.")
+
 
 # --- 3. HÀM XỬ LÝ CHÍNH (CÓ SESSION STATE) ---
 def process_image(conf, uploaded_file, model_food, model_size):
