@@ -27,7 +27,7 @@ def display_analysis(food_results, size_model, original_image, container):
         found_any = False
         table_data = [] 
 
-        # --- BƯỚC 1: KIỂM TRA SỰ TỒN TẠI CỦA BÚN CHẢ ---
+        # --- BƯỚC 1: QUÉT TẤT CẢ CÁC BOX ĐỂ TÌM BÚN CHẢ ---
         all_detected_boxes = []
         has_bun_cha = False
         
@@ -35,22 +35,25 @@ def display_analysis(food_results, size_model, original_image, container):
             for box in r.boxes:
                 class_id = int(box.cls[0].item())
                 if class_id < len(class_names):
-                    name_en = class_names[class_id]["name"].lower()
-                    all_detected_boxes.append(box)
-                    # Kiểm tra nếu có bún chả (viết thường để so sánh)
-                    if "bún chả" in name_en or "bun cha" in name_en:
+                    name_raw = class_names[class_id]["name"].lower()
+                    all_detected_boxes.append((box, class_id))
+                    # Tìm từ khóa "bun cha" hoặc "bún chả" trong tên class
+                    if "bun cha" in name_raw or "bún chả" in name_raw:
                         has_bun_cha = True
 
         # --- BƯỚC 2: LỌC VÀ HIỂN THỊ ---
-        for box in all_detected_boxes:
-            class_id = int(box.cls[0].item())
+        for box, class_id in all_detected_boxes:
             info = class_names[class_id]
             name = info["name"]
             name_lower = name.lower()
 
-            # NẾU CÓ BÚN CHẢ THÌ BỎ QUA CLASS BÚN
-            if has_bun_cha and (name_lower == "bún" or name_lower == "bun"):
-                continue 
+            # NẾU ĐÃ CÓ BÚN CHẢ, THÌ BỎ QUA CÁC BOX CHỈ LÀ "BÚN" (TRÁNH TRÙNG LẶP)
+            # Điều kiện: Nếu có Bun cha VÀ tên món này chứa chữ "bun" nhưng KHÔNG chứa chữ "cha"
+            if has_bun_cha:
+                is_only_bun = ("bun" in name_lower or "bún" in name_lower) and \
+                             ("cha" not in name_lower and "chả" not in name_lower)
+                if is_only_bun:
+                    continue 
 
             base_nutri = info["nutrition"]
             
@@ -88,6 +91,7 @@ def display_analysis(food_results, size_model, original_image, container):
             st.success(f"📊 **TỔNG CỘNG BỮA ĂN:** ~ **{total_calories} kcal**")
         else:
             st.warning("⚠️ Không tìm thấy món ăn nào.")
+
 
 
 # --- 3. HÀM XỬ LÝ CHÍNH (CÓ SESSION STATE) ---
